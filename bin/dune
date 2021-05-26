@@ -1,0 +1,4 @@
+(executable
+ (libraries chip8)
+ (preprocess (pps ppx_deriving.show ppx_deriving.ord))
+ (name main))
