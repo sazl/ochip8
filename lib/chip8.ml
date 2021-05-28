@@ -116,6 +116,42 @@ let display_clear state =
     in
         state
 
+(*
+let display_draw state xv yv height =
+    let xi = Int32.to_int xv in
+    let yi = Int32.to_int yv in
+    let i = Int32.to_int state.i in
+    let h = Int32.to_int height in
+    let _ = state.regs.(0xF) <- 0l in
+    let _ =
+        for y = 0 to h do
+            let sprite = ref @@ Bytes.get_uint8 state.mem (i + y) in
+            let row = ((Int32.to_int state.regs.(yi)) + (Int32.to_int yv)) mod display_height in
+            begin
+                for x = 0 to 7 do
+                    let b = (!sprite land 0x80) lsr 7 in
+                    let col = ((Int32.to_int state.regs.(xi)) +  x) mod display_width in
+                    let _ = print_string @@ Printf.sprintf "b: 0x%x\n" b in
+
+                    if b = 1 then
+                    begin
+                        if state.display.(row).(col) != 0 then
+                        begin
+                            state.display.(row).(col) <- 0xc8c8c8c8;
+                            state.regs.(0xF) <- 1l;
+                        end
+                        else
+                            state.display.(row).(col) <- 0x0a0a0a0a
+                    end;
+                done;
+
+                sprite := !sprite lsl 1;
+            end;
+        done
+    in
+        state
+*)
+
 let display_draw state xv yv height =
     let xi = Int32.to_int xv in
     let yi = Int32.to_int yv in
@@ -127,15 +163,18 @@ let display_draw state xv yv height =
     let _ = print_string @@ Printf.sprintf "xi: 0x%X yi: 0x%X vx: 0x%X vy: 0x%X i: 0x%X h: 0x%x\n" xi yi vx vy i h in
     let _ =
         for y = 0 to h-1 do
-            let sprite = Int32.of_int @@ 0xFF land Bytes.get_int8 state.mem (i + y) in
+        begin
+            let sprite = Int32.of_int @@ 0xFF land (Bytes.get_int8 state.mem (i + y)) in
             let _ = print_string @@ Printf.sprintf "0x%X," (Int32.to_int sprite) in
             for x = 0 to 7 do
                 if (Int32.logand sprite (Int32.shift_left 0x80l x)) != 0l then
-                    if state.display.(y + vy).(x + vx) = 1 then
-                        state.regs.(0xF) <- 1l;
+                begin
+                    if state.display.(y + vy).(x + vx) = 1 then state.regs.(0xF) <- 1l;
                     let curr_pix = state.display.(y + vy).(x + vx) in
                     state.display.(y + vy).(x + vx) <- curr_pix lxor 0x1;
-            done
+                end;
+            done;
+        end;
         done
     in
         state
