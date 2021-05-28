@@ -17,6 +17,6 @@ let () =
   run "Instructions" [
     "nibbles", [
         test_case "Get Nibble"     `Quick test_instruction_get_nibble;
-        test_case "Capitalization" `Quick test_instruction_get_last_nibbles;
+        test_case "Get Last Nibbles" `Quick test_instruction_get_last_nibbles;
       ];
   ]
