@@ -12,11 +12,32 @@ let test_instruction_get_last_nibbles _ =
   Alcotest.(check int32) "get last 3 nibbles" 0x0DEAl (instruction_get_last_nibbles 0xCDEAl 3);
   Alcotest.(check int32) "get last 4 nibbles" 0xCDEAl (instruction_get_last_nibbles 0xCDEAl 4)
 
+let test_instruction_jump _ =
+  let init_state = init () in
+  let addr = 0xA0l in
+  let jmp_state = { init_state with decoded = Jump addr } in
+  let mod_state = execute jmp_state in
+  Alcotest.(check int32) "jump to 0xA0" addr mod_state.pc
+
+let test_instruction_jump_consecutive _ =
+  let init_state = init () in
+  let addr = 0xA0l in
+  let jmp_state = { init_state with decoded = Jump addr } in
+  let mod_state = execute jmp_state in
+  let other_addr = 0xEFl in
+  let jmp2_state = { mod_state with decoded = Jump other_addr } in
+  let final_state = execute jmp2_state in
+  Alcotest.(check int32) "jump to consecutive addresses" other_addr final_state.pc
+
 let () =
   let open Alcotest in
   run "Instructions" [
     "nibbles", [
-        test_case "Get Nibble"     `Quick test_instruction_get_nibble;
-        test_case "Get Last Nibbles" `Quick test_instruction_get_last_nibbles;
-      ];
+      test_case "Get Nibble" `Quick test_instruction_get_nibble;
+      test_case "Get Last Nibbles" `Quick test_instruction_get_last_nibbles;
+    ];
+    "jump", [
+      test_case "Jump to address" `Quick test_instruction_jump;
+      test_case "Jump to consecutive" `Quick test_instruction_jump_consecutive;
+    ];
   ]
