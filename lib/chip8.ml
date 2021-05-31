@@ -2,7 +2,9 @@
 type instruction =
 | Unknown
 | ClearScreen
+| SubroutineReturn
 | Jump of Int32.t
+| SubroutineCall of Int32.t
 | SetReg of Int32.t * Int32.t
 | AddReg of Int32.t * Int32.t
 | SetRegIndex of Int32.t
@@ -25,6 +27,7 @@ type chip8 = {
     display: int array array;
     inst: Int32.t;
     decoded: instruction;
+    stack: Int32.t list;
     mem: Bytes.t;
     vdel: Int32.t;
     vsnd: Int32.t;
@@ -38,6 +41,7 @@ let init () = {
     display = Array.make_matrix display_height display_width 0;
     inst = 0l;
     decoded = Unknown;
+    stack = [];
     mem = Bytes.create memory_size;
     vdel = 0l;
     vsnd = 0l;
@@ -67,10 +71,21 @@ let fetch state =
 
 let decode_instruction inst =
     match Int32.logand inst 0xF000l with
-    | 0x0000l -> ClearScreen
+    | 0x0000l -> (
+        let nibble = instruction_get_last_nibbles inst 2 in
+        match nibble with
+        | 0xE0l -> ClearScreen
+        | 0xEEl -> SubroutineReturn
+        | _ -> Unknown
+    )
     | 0x1000l ->
         let addr = instruction_get_last_nibbles inst 3 in
         Jump addr
+    | 0x2000l ->
+        let addr = instruction_get_last_nibbles inst 3 in
+        SubroutineCall addr
+    | 0x5000l ->
+        Unknown
     | 0x6000l ->
         let reg = instruction_get_nibble inst 2 in
         let num = instruction_get_last_nibbles inst 2 in
@@ -79,6 +94,8 @@ let decode_instruction inst =
         let reg = instruction_get_nibble inst 2 in
         let num = instruction_get_last_nibbles inst 2 in
         AddReg (reg, num)
+    | 0x9000l ->
+        Unknown
     | 0xA000l ->
         let num = instruction_get_last_nibbles inst 3 in
         SetRegIndex num
@@ -98,9 +115,9 @@ let display_show display =
     for i = 0 to display_height - 1 do
         for j = 0 to display_width - 1 do
             if display.(i).(j) = 0 then
-                print_char '.'
+                print_char ' '
             else
-                print_char 'X';
+                print_string "█";
         done;
         print_endline ""
     done;
@@ -124,13 +141,11 @@ let display_draw state xv yv height =
     let _ = state.regs.(0xF) <- 0l in
     let i = Int32.to_int state.i in
     let h = Int32.to_int height in
-    let _ = print_string @@ Printf.sprintf "xi: 0x%X yi: 0x%X vx: 0x%X vy: 0x%X i: 0x%X h: 0x%x\n" xi yi vx vy i h in
     let _ =
         for y = 0 to h-1 do
         begin
             let cy = (vy + y) mod display_height in
-            let pixel = 0xFF land (Bytes.get_int8 state.mem (i + y)) in
-            let _ = print_string @@ Printf.sprintf "0x%X," pixel in
+            let pixel = Bytes.get_int8 state.mem (i + y) in
 
             for x = 0 to 7 do
                 if (pixel land (0x80 lsr x)) != 0 then
@@ -153,7 +168,12 @@ let execute state =
     match state.decoded with
     | Unknown -> state
     | ClearScreen -> display_clear state
+    | SubroutineReturn ->
+        let addr = List.hd state.stack in
+        { state with pc = addr; stack = List.tl state.stack }
     | Jump addr -> { state with pc = addr }
+    | SubroutineCall addr ->
+        { state with stack = state.pc :: state.stack; pc = addr }
     | SetReg (x, num) ->
         Array.set state.regs (Int32.to_int x) num;
         state
