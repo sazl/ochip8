@@ -98,9 +98,9 @@ let display_show display =
     for i = 0 to display_height - 1 do
         for j = 0 to display_width - 1 do
             if display.(i).(j) = 0 then
-                print_char ' '
+                print_char '.'
             else
-                print_char '.';
+                print_char 'X';
         done;
         print_endline ""
     done;
@@ -119,8 +119,8 @@ let display_clear state =
 let display_draw state xv yv height =
     let xi = Int32.to_int xv in
     let yi = Int32.to_int yv in
-    let vx = Int32.to_int @@ Int32.unsigned_rem state.regs.(xi) (Int32.of_int display_width) in
-    let vy = Int32.to_int @@ Int32.unsigned_rem state.regs.(yi) (Int32.of_int display_height) in
+    let vx = Int32.to_int state.regs.(xi) in
+    let vy = Int32.to_int state.regs.(yi) in
     let _ = state.regs.(0xF) <- 0l in
     let i = Int32.to_int state.i in
     let h = Int32.to_int height in
@@ -128,17 +128,20 @@ let display_draw state xv yv height =
     let _ =
         for y = 0 to h-1 do
         begin
-            let pixel = Int32.of_int @@ 0xFF land (Bytes.get_int8 state.mem (i + y)) in
-            let _ = print_string @@ Printf.sprintf "0x%X," (Int32.to_int pixel) in
+            let cy = (vy + y) mod display_height in
+            let pixel = 0xFF land (Bytes.get_int8 state.mem (i + y)) in
+            let _ = print_string @@ Printf.sprintf "0x%X," pixel in
+
             for x = 0 to 7 do
-                if (Int32.logand pixel (Int32.shift_right 0x80l x)) != 0l then
+                if (pixel land (0x80 lsr x)) != 0 then
                 begin
-                    if state.display.(y + vy).(x + vx) = 1 then
+                    let cx = (vx + x) mod display_width in
+                    if state.display.(cy).(cx) = 1 then
                     begin
                         state.regs.(0xF) <- 1l;
                     end;
-                    let curr_pix = state.display.(y + vy).(x + vx) in
-                    state.display.(y + vy).(x + vx) <- curr_pix lxor 0x1;
+                    let curr_pix = state.display.(cy).(cx) in
+                    state.display.(cy).(cx) <- curr_pix lxor 0x1;
                 end;
             done;
         end;
