@@ -29,6 +29,20 @@ let test_instruction_jump_consecutive _ =
   let final_state = execute jmp2_state in
   Alcotest.(check int32) "jump to consecutive addresses" other_addr final_state.pc
 
+let test_skip_if_regs_not_equal _ =
+  let init_state = init () in
+  let init_pc = 0x20l in
+  let x = 0l in
+  let y = 1l in
+  let xi = Int32.to_int x in
+  let yi = Int32.to_int y in
+  let skip_state = { init_state with decoded = SkipIfRegsNotEqual (x, y); pc = init_pc } in
+  let _ = skip_state.regs.(xi) <- 4l in
+  let _ = skip_state.regs.(yi) <- 6l in
+  let mod_state = execute skip_state in
+  let expected_pc = Int32.add init_pc 2l in
+  Alcotest.(check int32) "skip instruction if X != Y" expected_pc mod_state.pc
+
 let () =
   let open Alcotest in
   run "Instructions" [
@@ -40,4 +54,7 @@ let () =
       test_case "Jump to address" `Quick test_instruction_jump;
       test_case "Jump to consecutive" `Quick test_instruction_jump_consecutive;
     ];
+    "skip_if_regs_not_equal", [
+      test_case "Skip if X != Y" `Quick test_skip_if_regs_not_equal
+    ]
   ]

@@ -23,6 +23,15 @@ type instruction =
 | ShiftRightRegXY of Int32.t * Int32.t
 | SubRegYX of Int32.t * Int32.t
 | ShiftLeftRegXY of Int32.t * Int32.t
+| CopyDelayTimer of Int32.t
+| WaitForKeyPress of Int32.t
+| SetDelayTimer of Int32.t
+| SetSoundTimer of Int32.t
+| AddToIndex of Int32.t
+| FontIndex of Int32.t
+| BinaryCodeDecimal of Int32.t
+| StoreRegs of Int32.t
+| LoadRegs of Int32.t
 [@@deriving show, eq]
 
 let register_count = 16
@@ -108,8 +117,8 @@ let decode_instruction inst =
         let num = instruction_get_last_nibbles inst 2 in
         SkipIfRegValueEqual (xi, num)
     | 0x5000l -> (
-        let x = instruction_get_nibble inst 2 in
-        let y = instruction_get_nibble inst 3 in
+        let x = instruction_get_nibble inst 1 in
+        let y = instruction_get_nibble inst 2 in
         SkipIfRegsEqual (x, y)
     )
     | 0x6000l ->
@@ -137,8 +146,8 @@ let decode_instruction inst =
         | _ -> Unknown
     )
     | 0x9000l ->
-        let x = instruction_get_nibble inst 2 in
-        let y = instruction_get_nibble inst 3 in
+        let x = instruction_get_nibble inst 1 in
+        let y = instruction_get_nibble inst 2 in
         SkipIfRegsNotEqual (x, y)
     | 0xA000l ->
         let num = instruction_get_last_nibbles inst 3 in
@@ -155,6 +164,23 @@ let decode_instruction inst =
         let y = instruction_get_nibble inst 1 in
         let num = instruction_get_nibble inst 0 in
         Draw (x, y, num)
+    | 0xE000l ->
+        Unknown
+    | 0xF000l -> (
+        let nb = instruction_get_last_nibbles inst 2 in
+        let x = instruction_get_nibble inst 1 in
+        match nb with
+        | 0x07l -> CopyDelayTimer x
+        | 0x0Al -> WaitForKeyPress x
+        | 0x15l -> SetDelayTimer x
+        | 0x18l -> SetSoundTimer x
+        | 0x1El -> AddToIndex x
+        | 0x29l -> FontIndex x
+        | 0x33l -> BinaryCodeDecimal x
+        | 0x55l -> StoreRegs x
+        | 0x65l -> LoadRegs x
+        | _ -> Unknown
+    )
     | _ ->
         Unknown
 
@@ -344,6 +370,63 @@ let execute_instruction state =
         let vy = state.regs.(yi) in
         let _ = state.regs.(xi) <- Int32.shift_left vy 1 in
         state
+    | CopyDelayTimer x ->
+        let xi = Int32.to_int x in
+        let delay = state.vdel in
+        let _ = state.regs.(xi) <- delay in
+        state
+    | WaitForKeyPress _ -> state
+    | SetDelayTimer x ->
+        let xi = Int32.to_int x in
+        let vx = state.regs.(xi) in
+        { state with vdel = vx }
+    | SetSoundTimer x ->
+        let xi = Int32.to_int x in
+        let vx = state.regs.(xi) in
+        { state with vsnd = vx }
+    | AddToIndex x ->
+        let xi = Int32.to_int x in
+        let vx = state.regs.(xi) in
+        { state with i = Int32.add state.i vx }
+    | FontIndex _ -> state
+    | BinaryCodeDecimal x ->
+        let inc = 3 in
+        let xi = Int32.to_int x in
+        let vx = state.regs.(xi) in
+        let rec loop i lim n = (
+            if Int32.compare n 0l > 0 && i < lim then
+                let rem = Int32.rem n 10l in
+                let np = Int32.div n 10l in
+                let vi = Int32.to_int state.i in
+                let _ = Bytes.set_int8 state.mem (lim - vi) (Int32.to_int rem) in
+                loop (i+1) lim np
+        ) in
+        let _ = loop 0 inc vx in
+        { state with i = Int32.add state.i (Int32.of_int inc) }
+    | _ -> state
+    (*
+    | StoreRegs x -> (
+        let xi = Int32.to_int x in
+        let vn = Int32.to_int state.regs.(xi) in
+        let i = Int32.to_int state.i in
+        for x = 0 to vn do
+            Bytes.set_int8 state.mem (i + x) (Int32.to_int state.regs.(x))
+        done;
+        let new_i = Int32.succ @@ Int32.add state.i (Int32.of_int vn) in
+        { state with i = new_i }
+    )
+    | LoadRegs x -> (
+        let xi = Int32.to_int x in
+        let vn = Int32.to_int state.regs.(xi) in
+        let i = Int32.to_int state.i in
+        for x = 0 to vn do
+            let b = Bytes.get_int8 state.mem (i + x) in
+            state.regs.(x) <- Int32.of_int b
+        done;
+        let new_i = Int32.succ @@ Int32.add state.i (Int32.of_int vn) in
+        { state with i = new_i }
+    )
+    *)
 
 let execute state =
     let mod_state = execute_instruction state in
