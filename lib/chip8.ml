@@ -4,11 +4,25 @@ type instruction =
 | ClearScreen
 | SubroutineReturn
 | Jump of Int32.t
+| JumpWithIndex of Int32.t
 | SubroutineCall of Int32.t
 | SetReg of Int32.t * Int32.t
 | AddReg of Int32.t * Int32.t
 | SetRegIndex of Int32.t
 | Draw of Int32.t * Int32.t * Int32.t
+| SkipIfRegValueEqual of Int32.t * Int32.t
+| SkipIfRegsEqual of Int32.t * Int32.t
+| SkipIfRegsNotEqual of Int32.t * Int32.t
+| RandomNumber of Int32.t * Int32.t
+| SetRegXY of Int32.t * Int32.t
+| OrRegXY of Int32.t * Int32.t
+| AndRegXY of Int32.t * Int32.t
+| XorRegXY of Int32.t * Int32.t
+| AddRegXY of Int32.t * Int32.t
+| SubRegXY of Int32.t * Int32.t
+| ShiftRightRegXY of Int32.t * Int32.t
+| SubRegYX of Int32.t * Int32.t
+| ShiftLeftRegXY of Int32.t * Int32.t
 [@@deriving show, eq]
 
 let register_count = 16
@@ -49,6 +63,11 @@ let init () = {
     sp = 0l;
 }
 
+let timers_update state =
+    let del = if Int32.compare state.vdel 0l > 0 then Int32.pred state.vdel else 0l in
+    let snd = if Int32.compare state.vsnd 0l > 0 then Int32.pred state.vsnd else 0l in
+    {state with vdel = del; vsnd = snd }
+
 let instruction_get_nibble inst nibble =
     let nshift = nibble * 4 in
     let res = Int32.shift_right inst nshift in
@@ -84,8 +103,15 @@ let decode_instruction inst =
     | 0x2000l ->
         let addr = instruction_get_last_nibbles inst 3 in
         SubroutineCall addr
-    | 0x5000l ->
-        Unknown
+    | 0x3000l ->
+        let xi = instruction_get_nibble inst 2 in
+        let num = instruction_get_last_nibbles inst 2 in
+        SkipIfRegValueEqual (xi, num)
+    | 0x5000l -> (
+        let x = instruction_get_nibble inst 2 in
+        let y = instruction_get_nibble inst 3 in
+        SkipIfRegsEqual (x, y)
+    )
     | 0x6000l ->
         let reg = instruction_get_nibble inst 2 in
         let num = instruction_get_last_nibbles inst 2 in
@@ -94,11 +120,36 @@ let decode_instruction inst =
         let reg = instruction_get_nibble inst 2 in
         let num = instruction_get_last_nibbles inst 2 in
         AddReg (reg, num)
+    | 0X8000l -> (
+        let sel = instruction_get_nibble inst 3 in
+        let x = instruction_get_nibble inst 1 in
+        let y = instruction_get_nibble inst 2 in
+        match sel with
+        | 0x0l -> SetRegXY (x, y)
+        | 0x1l -> OrRegXY (x, y)
+        | 0x2l -> AndRegXY (x, y)
+        | 0x3l -> XorRegXY (x, y)
+        | 0x4l -> AddRegXY (x, y)
+        | 0x5l -> SubRegXY (x, y)
+        | 0x6l -> ShiftRightRegXY (x, y)
+        | 0x7l -> SubRegYX (x, y)
+        | 0xEl -> ShiftLeftRegXY (x, y)
+        | _ -> Unknown
+    )
     | 0x9000l ->
-        Unknown
+        let x = instruction_get_nibble inst 2 in
+        let y = instruction_get_nibble inst 3 in
+        SkipIfRegsNotEqual (x, y)
     | 0xA000l ->
         let num = instruction_get_last_nibbles inst 3 in
         SetRegIndex num
+    | 0xB000l ->
+        let num = instruction_get_last_nibbles inst 3 in
+        JumpWithIndex num
+    | 0xC000l ->
+        let x = instruction_get_nibble inst 2 in
+        let num = instruction_get_last_nibbles inst 2 in
+        RandomNumber (x, num)
     | 0xD000l ->
         let x = instruction_get_nibble inst 2 in
         let y = instruction_get_nibble inst 1 in
@@ -112,16 +163,19 @@ let decode state =
     { state with decoded = inst }
 
 let display_show display =
-    for i = 0 to display_height - 1 do
-        for j = 0 to display_width - 1 do
-            if display.(i).(j) = 0 then
-                print_char ' '
-            else
-                print_string "█";
+    begin
+        print_string "\x1b[?25l";
+        for i = 0 to display_height - 1 do
+            for j = 0 to display_width - 1 do
+                if display.(i).(j) = 0 then
+                    print_char ' '
+                else
+                    print_string "█";
+            done;
+            print_endline ""
         done;
-        print_endline ""
-    done;
-    print_endline "--------------------------"
+        print_string "\x1B[64A"
+    end
 
 let display_clear state =
     let _ =
@@ -164,7 +218,10 @@ let display_draw state xv yv height =
     in
         state
 
-let execute state =
+
+(* TODO: arith/log overflow and set VF *)
+
+let execute_instruction state =
     match state.decoded with
     | Unknown -> state
     | ClearScreen -> display_clear state
@@ -172,6 +229,11 @@ let execute state =
         let addr = List.hd state.stack in
         { state with pc = addr; stack = List.tl state.stack }
     | Jump addr -> { state with pc = addr }
+    | JumpWithIndex num -> (
+        let v0 = state.regs.(0x0) in
+        let ind = Int32.add v0 num in
+        { state with pc = ind }
+    )
     | SubroutineCall addr ->
         { state with stack = state.pc :: state.stack; pc = addr }
     | SetReg (x, num) ->
@@ -185,3 +247,104 @@ let execute state =
         state
     | SetRegIndex (num) -> { state with i = num }
     | Draw (x, y, num) -> display_draw state x y num
+    | SkipIfRegValueEqual (x, num) -> (
+        let xi = Int32.to_int x in
+        let vx = state.regs.(xi) in
+        if vx = num then
+            { state with pc = Int32.add state.pc 2l }
+        else
+            state
+    )
+    | SkipIfRegsEqual (x, y) -> (
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        if vx = vy then
+            { state with pc = Int32.add state.pc 2l }
+        else
+            state
+    )
+    | SkipIfRegsNotEqual (x, y) -> (
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        if vx != vy then
+            { state with pc = Int32.add state.pc 2l }
+        else
+            state
+    )
+    | RandomNumber (x, num) -> (
+        let xi = Int32.to_int x in
+        let n = Int32.to_int num in
+        let vx = state.regs.(xi) in
+        let rnd = Int32.of_int @@ Random.int n in
+        let res = Int32.logand rnd vx in
+        let _ = state.regs.(xi) <- res in
+        state
+    )
+    | SetRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- vy in
+        state
+    | OrRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.logor vx vy in
+        state
+    | AndRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.logand vx vy in
+        state
+    | XorRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.logxor vx vy in
+        state
+    | AddRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.add vx vy in
+        state
+    | SubRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.sub vx vy in
+        state
+    | ShiftRightRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.shift_right vy 1 in
+        state
+    | SubRegYX (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vx = state.regs.(xi) in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.sub vy vx in
+        state
+    | ShiftLeftRegXY (x, y) ->
+        let xi = Int32.to_int x in
+        let yi = Int32.to_int y in
+        let vy = state.regs.(yi) in
+        let _ = state.regs.(xi) <- Int32.shift_left vy 1 in
+        state
+
+let execute state =
+    let mod_state = execute_instruction state in
+    timers_update mod_state

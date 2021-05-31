@@ -1,7 +1,7 @@
 open Chip8
 
 let _ =
-  let state = read_program "roms/ibm.ch8" in
+  let state = read_program "roms/maze.ch8" in
   let rec loop state =
     let fstate = fetch state in
     let dstate = decode fstate in
