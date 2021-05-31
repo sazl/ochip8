@@ -37,9 +37,9 @@ let test_decode_instruction_draw _ =
     Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0xD25Fl) (Draw (0x2l, 0x5l, 0xFl))
 
 let test_decode_instruction_unknown _ =
-  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0xFE83l) Unknown;
-  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0x3945l) Unknown;
-  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0x5E47l) Unknown
+  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0x812Fl) Unknown;
+  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0x00EFl) Unknown;
+  Alcotest.(check instruction_testable) "decode 0xE0 should ClearScreen" (decode_instruction 0xF104l) Unknown
 
 let () =
   let open Alcotest in
